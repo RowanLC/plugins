@@ -29,7 +29,11 @@
 
 add_option( "jal_db_version", "1.3" );
 
+function plugin_log_enqueue_styles() {
+    wp_enqueue_style('plugin-log-style', plugins_url(__FILE__), '/style.css');
+}
 
+add_action('wp_enqueue_scripts', 'plugin_log_enqueue_styles');
 // require_once __DIR__ . '/lib/statistiques.php';
 
 /**
@@ -57,6 +61,8 @@ function installLogTable(){
         page_link VARCHAR(255) NOT NULL,
         create_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         page_title VARCHAR(255) NOT NULL,
+        clics_number INT(20) NOT NULL,
+        link_copied BOOLEAN NOT NULL,
         PRIMARY KEY (id)
     ) $charset_collate;";
 
@@ -117,19 +123,25 @@ function wp_plugin_log_user_ip() {
     $page_link = get_permalink();
     echo get_the_title();
     $page_title = get_the_title();
+    $clics_number = "<script src='js/script.js'></script>";
+    $link_copied = "<script src='js/script.js'></script>";
     // Cela définit le nom de la table de journalisation en utilisant le préfixe de la table WordPress et en ajoutant "log_journal_data".
     $xblog_table_name = $wpdb->prefix . 'log_journal_data';
-    // Cette ligne insère les données récupérées dans la table de journalisation. Elle utilise la méthode insert() de l'objet $wpdb pour effectuer l'opération d'insertion.
+    // Cette ligne insère les données récupérées dqans la table de journalisation. Elle utilise la méthode insert() de l'objet $wpdb pour effectuer l'opération d'insertion.
     $wpdb->insert( 
-        $xblog_table_name, 
+        $xblog_table_name,
         array( 
-            'ip_address' => $ip_address, 
+            'ip_address' => $ip_address,
             'page_link' => $page_link,
-            'page_title' => $page_title,            
+            'page_title' => $page_title,
+            'clics_number' => $clics_number,
+            'link_copied' => $link_copied,
         ), 
         array( 
             '%s', 
             '%s',
+            '%s',
+            '%d',
             '%s', 
         ) 
     );
@@ -157,6 +169,30 @@ function get_page_title_from_url($url) {
     return '';
 }
 
+function my_plugin_log_copy_event() {
+    if(!isset($_POST['url'])) {
+        wp_send_json_error('No URL provided');
+        return;
+    }
+
+    $url = sanitize_text_firld($_POST['url']);
+    $user_id = get_current_user_id();
+    $timestamp = current_time('mysql');
+
+    $log_entry = sprintf(
+        '[%s] User ID : %d copied URL : %s',
+        $timestamp,
+        $user_id,
+        $url
+    );
+
+    error_log($log_entry);
+
+    wp_send_json_success('Event logged successfully');
+}
+
+add_action('wp_ajax_plugin_log_copy_event', 'plugin_log_copy_event');
+add_action('wp_ajax_nopriv_plugin_log_copy_event', 'my_plugin_log_copy_event');
 
 /**
  * La fonction wp_plugin_log_admin_menu utilise la fonction add_menu_page() pour ajouter une nouvelle page dans la section d'administration de WordPress. Cette page affichera les informations stockées dans la table wp_plugin_log. 
@@ -240,19 +276,23 @@ function wp_plugin_log_page() {
         // Cela commence un formulaire qui sera utilisé pour supprimer des journaux sélectionnés.
         echo '<form method="post" action="">';
     // Cela commence un tableau HTML pour afficher les journaux
-    echo '<table>';
+    echo '<table id="id_table">';
     //echo '<tr><th>IP Address</th><th>Page Link</th><th>Date</th></tr>';
 
     // Cette ligne définit une chaîne de caractères HTML contenant les en-têtes de colonne du tableau avec des liens de tri pour chaque colonne.
     $html = '<tr><th>
     <a href="'.get_site_url().'/wp-admin/admin.php?page=wp_plugin_log&orderby=ip_address&order=' . $order_link . '">IP Address
     </a></th><th><a href="'.get_site_url().'/wp-admin/admin.php?page=wp_plugin_log&orderby=page_link&order=' . $order_link . '">Page Link
+    </a></th><th><a href="'.get_site_url().'/wp-admin/admin.php?page=wp_plugin_log&orderby=page_title&order=' . $order_link . '">Page Title
+    </a></th><th><a href="'.get_site_url().'/wp-admin/admin.php?page=wp_plugin_log&orderby=created_at&order=' . $order_link . '">Created At
+    </a></th><th><a href="'.get_site_url().'/wp-admin/admin.php?page=wp_plugin_log&orderby=clics_number&order=' . $order_link . '">Clics Number
+    </a></th><th><a href="'.get_site_url().'/wp_admin/admin.php?page=wp_plugin_log&orderby=link_copied&order=' . $order_link . '">Link Copied
     </a></th><th><a href="'.get_site_url().'/wp-admin/admin.php?page=wp_plugin_log&orderby=create_at&order=' . $order_link . '">Date
     </a></th></tr>';
     // Cette ligne affiche les en-têtes de colonne dans le tableau.
     echo htmlspecialchars_decode($html) ;
     // Cette ligne commence la balise <thead> du tableau avec les en-têtes de colonne.
-    echo '<thead><tr><th>Select</th><th>ID</th><th>IP Address</th><th>Page Link</th><th>Created At</th></tr><th>Page Title</th></thead>';
+    echo '<thead><tr><th>Select</th><th>ID</th><th>IP Address</th><th>Page Link</th><th>Created At</th></tr><th>Page Title</th><th>Clics Number</th><th>Link Copied</th></thead>';
     // Cette ligne commence la balise <tbody> du tableau où les données des journaux seront affichées.
     echo '<tbody>';
     foreach ( $logs as $log ) {
@@ -263,6 +303,8 @@ function wp_plugin_log_page() {
         echo '<td>' . get_page_name_from_url($log->page_link) . '</td>';
         echo '<td>' . $log->create_at . '</td>';
         echo '<td>' . $log->page_title . '</td>';
+        echo '<td>' . $log->clics_number . '</td>';
+        echo '<td>' . $log->link_copied . '</td>';
         echo '</tr>';
     }
     // Cette ligne termine la balise <tbody> du tableau.
@@ -397,3 +439,14 @@ function plugin_stats() {
     }
     echo "</ul>";
 }
+
+function wp_plugin_log_enqueue_scripts() {
+    wp_enqueue_script('plugin-log-edit-script', plugin_url('js/script.js', __FILE__), array('jquery'), null, true);
+    wp_localize_script(
+        'plugin-log-edit-script',
+        'MyPluginAjax',
+        array('ajaxurl' => admin_url('admin-ajax.php'))
+    );
+}
+
+add_action('enqueue_scripts', 'wp_plugin_log_enqueue_scripts');
