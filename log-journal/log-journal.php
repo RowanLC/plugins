@@ -29,8 +29,12 @@
 
 add_option( "jal_db_version", "1.3" );
 
+if (!defined('ABSPATH')) {
+    exit;
+}
+
 function plugin_log_enqueue_styles() {
-    wp_enqueue_style('plugin-log-style', plugins_url(__FILE__), '/style.css');
+    wp_enqueue_style('plugin-log-style', plugin_dir_url(__FILE__), '/style.css');
 }
 
 add_action('wp_enqueue_scripts', 'plugin_log_enqueue_styles');
